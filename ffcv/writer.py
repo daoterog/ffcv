@@ -44,6 +44,10 @@ def handle_sample(sample, dest_ix, field_names, metadata, allocator, fields):
     for i in range(2):
         try:
             allocator.set_current_sample(dest_ix)
+
+            if isinstance(sample, dict):
+                sample = list(sample.values())
+
             # We extract the sample in question from the dataset
             # We write each field individually to the metadata region
             for field_name, field, field_value in zip(field_names, fields.values(), sample):
