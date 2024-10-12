@@ -31,7 +31,7 @@ def select_buffer(buffer, batch_slot, count):
 
 
 class EpochIterator(Thread):
-    def __init__(self, loader: 'Loader', order: Sequence[int]):
+    def __init__(self, loader: 'Loader', order: Sequence[int], return_indices: bool):
         super().__init__(daemon=True)
         self.loader: 'Loader' = loader
         self.order = order
@@ -42,8 +42,8 @@ class EpochIterator(Thread):
         self.closed = False
         self.output_queue = Queue(self.loader.batches_ahead)
         self.terminate_event = Event()
-        self.memory_context = self.loader.memory_manager.schedule_epoch(
-            batches)
+        self.memory_context = self.loader.memory_manager.schedule_epoch(batches)
+        self.return_indices = return_indices
 
         if IS_CUDA:
             self.current_stream = ch.cuda.current_stream()
@@ -149,6 +149,8 @@ class EpochIterator(Thread):
                 pass
 
             result = tuple(args[f'result_{x}'] for x in outputs)
+            if self.return_indices:
+                return batch_indices, result
             return result
 
     def __next__(self):
