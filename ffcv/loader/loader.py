@@ -103,6 +103,7 @@ class Loader:
                  recompile: bool = False,  # Recompile at every epoch
                  order_kwargs: dict = dict(),
                  return_indices: bool = False,
+                 return_type: str = "tuple",
                  ):
 
         if distributed and order == OrderOption.RANDOM and (seed is None):
@@ -140,6 +141,7 @@ class Loader:
         self.code = None
         self.recompile = recompile
         self.return_indices = return_indices
+        self.return_type = return_type
 
         if self.num_workers < 1:
             self.num_workers = len(sched_getaffinity(0))
@@ -226,7 +228,7 @@ class Loader:
         if self.code is None or self.recompile:
             self.generate_code()
 
-        return EpochIterator(self, selected_order, self.return_indices)
+        return EpochIterator(self, selected_order, self.return_indices, self.return_type)
 
     def filter(self, field_name:str, condition: Callable[[Any], bool]) -> 'Loader':
         new_args = {**self._args}

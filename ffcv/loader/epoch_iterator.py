@@ -31,8 +31,12 @@ def select_buffer(buffer, batch_slot, count):
 
 
 class EpochIterator(Thread):
-    def __init__(self, loader: 'Loader', order: Sequence[int], return_indices: bool):
+    def __init__(self, loader: 'Loader', order: Sequence[int], return_indices: bool, return_type: str):
         super().__init__(daemon=True)
+
+        if return_type not in ["tuple", "dict"]:
+            raise ValueError(f"return_type must be either 'tuple' or 'dict', got {return_type}")
+
         self.loader: 'Loader' = loader
         self.order = order
         self.metadata = loader.reader.metadata
@@ -44,6 +48,7 @@ class EpochIterator(Thread):
         self.terminate_event = Event()
         self.memory_context = self.loader.memory_manager.schedule_epoch(batches)
         self.return_indices = return_indices
+        self.return_type = return_type
 
         if IS_CUDA:
             self.current_stream = ch.cuda.current_stream()
@@ -148,7 +153,13 @@ class EpochIterator(Thread):
                     args[f'result_{node_id}'] = result
                 pass
 
-            result = tuple(args[f'result_{x}'] for x in outputs)
+            if self.return_type == "tuple":
+                result = tuple(args[f'result_{x}'] for x in outputs)
+            else:
+                result = {
+                    k: args[f'result_{x}'] for x, k in zip(outputs, self.loader.reader.handlers.keys())
+                }
+
             if self.return_indices:
                 return batch_indices, result
             return result
