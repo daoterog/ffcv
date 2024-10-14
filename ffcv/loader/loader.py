@@ -102,6 +102,7 @@ class Loader:
                  batches_ahead: int = 3,
                  recompile: bool = False,  # Recompile at every epoch
                  order_kwargs: dict = dict(),
+                 custom_field_mapper: int = None,
                  return_indices: bool = False,
                  return_type: str = "tuple",
                  ):
@@ -128,13 +129,14 @@ class Loader:
             'pipelines': pipelines,
             'drop_last': drop_last,
             'batches_ahead': batches_ahead,
-            'recompile': recompile
+            'recompile': recompile,
+            "custom_field_mapper": custom_field_mapper,
         }
         self.fname: str = fname
         self.batch_size: int = batch_size
         self.batches_ahead = batches_ahead
         self.seed: int = seed
-        self.reader: Reader = Reader(self.fname, custom_fields)
+        self.reader: Reader = Reader(self.fname, custom_fields, custom_field_mapper)
         self.num_workers: int = num_workers
         self.drop_last: bool = drop_last
         self.distributed: bool = distributed
@@ -192,6 +194,8 @@ class Loader:
 
         # Adding the default pipelines
         for f_ix, (field_name, field) in enumerate(self.reader.handlers.items()):
+            if custom_field_mapper is not None and field_name in custom_field_mapper.keys():
+                f_ix = self.field_name_to_f_ix[custom_field_mapper[field_name]]
             self.field_name_to_f_ix[field_name] = f_ix
 
             if field_name not in custom_pipeline_specs:

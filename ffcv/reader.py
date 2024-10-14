@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 
 from .utils import decode_null_terminated_string
@@ -6,9 +7,10 @@ from .types import (ALLOC_TABLE_TYPE, HeaderType, CURRENT_VERSION,
 
 class Reader:
 
-    def __init__(self, fname, custom_handlers={}):
+    def __init__(self, fname, custom_handlers={}, custom_field_mapper=None):
         self._fname = fname
         self._custom_handlers = custom_handlers
+        self._custom_field_mapper = custom_field_mapper
         self.read_header()
         self.read_field_descriptors()
         self.read_metadata()
@@ -55,6 +57,12 @@ class Reader:
                                  f"for custom field {field_name}")
 
         self.metadata_type = get_metadata_type(list(self.handlers.values()))
+        
+        if self._custom_field_mapper is not None:
+            for target, source in self._custom_field_mapper.items():
+                assert source in self.handlers
+                self.handlers[target] = copy.copy(self.handlers[source])
+
 
     def read_metadata(self):
         offset = HeaderType.itemsize + self.field_descriptors.nbytes
