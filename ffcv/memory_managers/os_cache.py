@@ -1,17 +1,17 @@
 from typing import TYPE_CHECKING
 
-import numpy as np
 import numba as nb
+import numpy as np
 
-from .base import MemoryManager, MemoryContext
 from ..pipeline.compiler import Compiler
+from .base import MemoryContext, MemoryManager
 
 if TYPE_CHECKING:
     from ..reader import Reader
 
 
 class OSCacheContext(MemoryContext):
-    def __init__(self, manager:MemoryManager):
+    def __init__(self, manager: MemoryManager):
         self.manager = manager
         self.mmap = None
 
@@ -22,8 +22,7 @@ class OSCacheContext(MemoryContext):
     def __enter__(self):
         res = super().__enter__()
         if self.mmap is None:
-            self.mmap = np.memmap(self.manager.reader.file_name,
-                                  'uint8', mode='r')
+            self.mmap = np.memmap(self.manager.reader.file_name, "uint8", mode="r")
         return res
 
     def __exit__(self, __exc_type, __exc_value, __traceback):
@@ -37,7 +36,7 @@ class OSCacheContext(MemoryContext):
 
 class OSCacheManager(MemoryManager):
 
-    def __init__(self, reader: 'Reader'):
+    def __init__(self, reader: "Reader"):
         super().__init__(reader)
         self.context = OSCacheContext(self)
 
@@ -55,7 +54,6 @@ class OSCacheManager(MemoryManager):
     def compile_reader(self):
         def read(address, mem_state):
             size = mem_state[2][np.searchsorted(mem_state[1], address)]
-            return mem_state[0][address:address + size]
+            return mem_state[0][address : address + size]
 
         return Compiler.compile(read, nb.uint8[::1](nb.uint64, self.state_type))
-

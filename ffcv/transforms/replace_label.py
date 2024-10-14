@@ -1,15 +1,17 @@
 """
 Replace label
 """
-from typing import Tuple
 
-import numpy as np
 from dataclasses import replace
 from typing import Callable, Optional, Tuple
+
+import numpy as np
+
 from ..pipeline.allocation_query import AllocationQuery
+from ..pipeline.compiler import Compiler
 from ..pipeline.operation import Operation
 from ..pipeline.state import State
-from ..pipeline.compiler import Compiler
+
 
 class ReplaceLabel(Operation):
     """Replace label of specified images.
@@ -46,5 +48,7 @@ class ReplaceLabel(Operation):
 
         return replace_label
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         return (replace(previous_state, jit_mode=True), None)

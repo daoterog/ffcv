@@ -1,31 +1,32 @@
 """
 FFCV loader
 """
-import enum
-from os import environ, sched_getaffinity
+
 import ast
-from multiprocessing import cpu_count
-from re import sub
-from typing import Any, Callable, Mapping, Sequence, Type, Union, Literal
+import enum
 from collections import defaultdict
 from collections.abc import Collection
-from enum import Enum, unique, auto
+from enum import Enum, auto, unique
+from multiprocessing import cpu_count
+from os import environ, sched_getaffinity
+from re import sub
+from typing import Any, Callable, Literal, Mapping, Sequence, Type, Union
+
+import numpy as np
+import torch as ch
 
 from ffcv.fields.base import Field
 
-import torch as ch
-import numpy as np
-
-from .epoch_iterator import EpochIterator
-from ..reader import Reader
-from ..traversal_order.base import TraversalOrder
-from ..traversal_order import Random, Sequential, QuasiRandom
-from ..pipeline import Pipeline, PipelineSpec, Compiler
-from ..pipeline.operation import Operation
+from ..memory_managers import (MemoryManager, OSCacheManager,
+                               ProcessCacheManager)
+from ..pipeline import Compiler, Pipeline, PipelineSpec
 from ..pipeline.graph import Graph
-from ..memory_managers import (
-    ProcessCacheManager, OSCacheManager, MemoryManager
-)
+from ..pipeline.operation import Operation
+from ..reader import Reader
+from ..traversal_order import QuasiRandom, Random, Sequential
+from ..traversal_order.base import TraversalOrder
+from .epoch_iterator import EpochIterator
+
 
 @unique
 class OrderOption(Enum):
@@ -33,21 +34,18 @@ class OrderOption(Enum):
     RANDOM = auto()
     QUASI_RANDOM = auto()
 
-ORDER_TYPE = Union[
-    TraversalOrder,
-    Literal[OrderOption.SEQUENTIAL,
-            OrderOption.RANDOM]
 
-]
+ORDER_TYPE = Union[TraversalOrder, Literal[OrderOption.SEQUENTIAL, OrderOption.RANDOM]]
 
 ORDER_MAP: Mapping[ORDER_TYPE, TraversalOrder] = {
     OrderOption.RANDOM: Random,
     OrderOption.SEQUENTIAL: Sequential,
-    OrderOption.QUASI_RANDOM: QuasiRandom
+    OrderOption.QUASI_RANDOM: QuasiRandom,
 }
 
-DEFAULT_PROCESS_CACHE = int(environ.get('FFCV_DEFAULT_CACHE_PROCESS', "0"))
+DEFAULT_PROCESS_CACHE = int(environ.get("FFCV_DEFAULT_CACHE_PROCESS", "0"))
 DEFAULT_OS_CACHE = not DEFAULT_PROCESS_CACHE
+
 
 class Loader:
     """FFCV loader class that can be used as a drop-in replacement
@@ -86,50 +84,53 @@ class Loader:
     recompile : bool
         Recompile every iteration. This is necessary if the implementation of some augmentations are expected to change during training.
     """
-    def __init__(self,
-                 fname: str,
-                 batch_size: int,
-                 num_workers: int = -1,
-                 os_cache: bool = DEFAULT_OS_CACHE,
-                 order: Union[ORDER_TYPE, TraversalOrder] = OrderOption.SEQUENTIAL,
-                 distributed: bool = False,
-                 seed: int = None,  # For ordering of samples
-                 indices: Sequence[int] = None,  # For subset selection
-                 pipelines: Mapping[str,
-                                    Sequence[Union[Operation, ch.nn.Module]]] = {},
-                 custom_fields: Mapping[str, Type[Field]] = {},
-                 drop_last: bool = True,
-                 batches_ahead: int = 3,
-                 recompile: bool = False,  # Recompile at every epoch
-                 order_kwargs: dict = dict(),
-                 custom_field_mapper: int = None,
-                 return_indices: bool = False,
-                 return_type: str = "tuple",
-                 ):
+
+    def __init__(
+        self,
+        fname: str,
+        batch_size: int,
+        num_workers: int = -1,
+        os_cache: bool = DEFAULT_OS_CACHE,
+        order: Union[ORDER_TYPE, TraversalOrder] = OrderOption.SEQUENTIAL,
+        distributed: bool = False,
+        seed: int = None,  # For ordering of samples
+        indices: Sequence[int] = None,  # For subset selection
+        pipelines: Mapping[str, Sequence[Union[Operation, ch.nn.Module]]] = {},
+        custom_fields: Mapping[str, Type[Field]] = {},
+        drop_last: bool = True,
+        batches_ahead: int = 3,
+        recompile: bool = False,  # Recompile at every epoch
+        order_kwargs: dict = dict(),
+        custom_field_mapper: int = None,
+        return_indices: bool = False,
+        return_type: str = "tuple",
+    ):
 
         if distributed and order == OrderOption.RANDOM and (seed is None):
-            print('Warning: no ordering seed was specified with distributed=True. '
-                  'Setting seed to 0 to match PyTorch distributed sampler.')
+            print(
+                "Warning: no ordering seed was specified with distributed=True. "
+                "Setting seed to 0 to match PyTorch distributed sampler."
+            )
             seed = 0
         elif seed is None:
-            tinfo = np.iinfo('int32')
+            tinfo = np.iinfo("int32")
             seed = np.random.randint(0, tinfo.max)
 
         # We store the original user arguments to be able to pass it to the
         # filtered version of the datasets
         self._args = {
-            'fname': fname,
-            'batch_size': batch_size,
-            'num_workers': num_workers,
-            'os_cache': os_cache,
-            'order': order,
-            'distributed': distributed,
-            'seed': seed,
-            'indices': indices,
-            'pipelines': pipelines,
-            'drop_last': drop_last,
-            'batches_ahead': batches_ahead,
-            'recompile': recompile,
+            "fname": fname,
+            "batch_size": batch_size,
+            "num_workers": num_workers,
+            "os_cache": os_cache,
+            "order": order,
+            "distributed": distributed,
+            "seed": seed,
+            "indices": indices,
+            "pipelines": pipelines,
+            "drop_last": drop_last,
+            "batches_ahead": batches_ahead,
+            "recompile": recompile,
             "custom_field_mapper": custom_field_mapper,
         }
         self.fname: str = fname
@@ -151,22 +152,23 @@ class Loader:
         Compiler.set_num_threads(self.num_workers)
 
         if indices is None:
-            self.indices = np.arange(self.reader.num_samples, dtype='uint64')
+            self.indices = np.arange(self.reader.num_samples, dtype="uint64")
         else:
             self.indices = np.array(indices)
 
         if os_cache:
             self.memory_manager: MemoryManager = OSCacheManager(self.reader)
         else:
-            self.memory_manager: MemoryManager = ProcessCacheManager(
-                self.reader)
+            self.memory_manager: MemoryManager = ProcessCacheManager(self.reader)
 
         if order in ORDER_MAP:
             self.traversal_order: TraversalOrder = ORDER_MAP[order](self)
         elif issubclass(order, TraversalOrder):
             self.traversal_order: TraversalOrder = order(self, **order_kwargs)
         else:
-            raise ValueError(f"Order {order} is not a supported order type or a subclass of TraversalOrder")
+            raise ValueError(
+                f"Order {order} is not a supported order type or a subclass of TraversalOrder"
+            )
 
         memory_read = self.memory_manager.compile_reader()
         self.next_epoch: int = 0
@@ -174,7 +176,7 @@ class Loader:
         self.pipelines = {}
         self.pipeline_specs = {}
         self.field_name_to_f_ix = {}
-        
+
         custom_pipeline_specs = {}
 
         # Creating PipelineSpec objects from the pipeline dict passed
@@ -194,7 +196,10 @@ class Loader:
 
         # Adding the default pipelines
         for f_ix, (field_name, field) in enumerate(self.reader.handlers.items()):
-            if custom_field_mapper is not None and field_name in custom_field_mapper.keys():
+            if (
+                custom_field_mapper is not None
+                and field_name in custom_field_mapper.keys()
+            ):
                 f_ix = self.field_name_to_f_ix[custom_field_mapper[field_name]]
             self.field_name_to_f_ix[field_name] = f_ix
 
@@ -212,10 +217,14 @@ class Loader:
             if field_name not in self.pipeline_specs:
                 self.pipeline_specs[field_name] = spec
 
-        self.graph = Graph(self.pipeline_specs, self.reader.handlers,
-                           self.field_name_to_f_ix, self.reader.metadata,
-                           memory_read)
-        
+        self.graph = Graph(
+            self.pipeline_specs,
+            self.reader.handlers,
+            self.field_name_to_f_ix,
+            self.reader.metadata,
+            memory_read,
+        )
+
         self.generate_code()
         self.first_traversal_order = self.next_traversal_order()
 
@@ -225,16 +234,18 @@ class Loader:
     def __iter__(self):
         Compiler.set_num_threads(self.num_workers)
         order = self.next_traversal_order()
-        selected_order = order[:len(self) * self.batch_size]
+        selected_order = order[: len(self) * self.batch_size]
         self.next_epoch += 1
 
         # Compile at the first epoch
         if self.code is None or self.recompile:
             self.generate_code()
 
-        return EpochIterator(self, selected_order, self.return_indices, self.return_type)
+        return EpochIterator(
+            self, selected_order, self.return_indices, self.return_type
+        )
 
-    def filter(self, field_name:str, condition: Callable[[Any], bool]) -> 'Loader':
+    def filter(self, field_name: str, condition: Callable[[Any], bool]) -> "Loader":
         new_args = {**self._args}
         pipelines = {}
 
@@ -244,18 +255,18 @@ class Loader:
 
         # We reuse the original pipeline for the field we care about
         try:
-            pipelines[field_name] = new_args['pipelines'][field_name]
+            pipelines[field_name] = new_args["pipelines"][field_name]
         except KeyError:
             # We keep the default one if the user didn't setup a custom one
             del pipelines[field_name]
             pass
 
-        new_args['pipelines'] = pipelines
+        new_args["pipelines"] = pipelines
 
         # We use sequential order for speed and to know which index we are
         # filtering
-        new_args['order'] = OrderOption.SEQUENTIAL
-        new_args['drop_last'] = False
+        new_args["order"] = OrderOption.SEQUENTIAL
+        new_args["drop_last"] = False
         sub_loader = Loader(**new_args)
         selected_indices = []
 
@@ -267,9 +278,8 @@ class Loader:
                     selected_indices.append(sample_id)
 
         final_args = {**self._args}
-        final_args['indices'] = np.array(selected_indices)
+        final_args["indices"] = np.array(selected_indices)
         return Loader(**final_args)
-
 
     def __len__(self):
         next_order = self.first_traversal_order
@@ -278,10 +288,6 @@ class Loader:
         else:
             return int(np.ceil(len(next_order) / self.batch_size))
 
-
-
     def generate_code(self):
         queries, code = self.graph.collect_requirements()
         self.code = self.graph.codegen_all(code)
-        
-

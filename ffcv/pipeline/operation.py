@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
-from typing import Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
 import numpy as np
 
-from .state import State
 from .allocation_query import AllocationQuery
+from .state import State
 
 if TYPE_CHECKING:
     from ..fields.base import Field
@@ -18,8 +17,8 @@ class Operation(ABC):
         self.memory_read: Callable[[np.uint64], np.ndarray] = None
         pass
 
-    def accept_field(self, field: 'Field'):
-        self.field: 'Field' = field
+    def accept_field(self, field: "Field"):
+        self.field: "Field" = field
 
     def accept_globals(self, metadata, memory_read):
         self.metadata = metadata
@@ -37,5 +36,7 @@ class Operation(ABC):
         return None
 
     @abstractmethod
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         raise NotImplementedError

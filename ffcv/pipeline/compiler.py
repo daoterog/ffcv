@@ -1,10 +1,13 @@
 import pdb
-from numba import njit, set_num_threads, prange, warnings as nwarnings, get_num_threads
-from numba.core.errors import NumbaPerformanceWarning
-from multiprocessing import cpu_count
-import torch as ch
 import warnings
+from multiprocessing import cpu_count
 from os import sched_getaffinity
+
+import torch as ch
+from numba import get_num_threads, njit, prange, set_num_threads
+from numba import warnings as nwarnings
+from numba.core.errors import NumbaPerformanceWarning
+
 
 class Compiler:
 
@@ -14,7 +17,7 @@ class Compiler:
 
     @classmethod
     def set_num_threads(cls, n):
-        if n < 1 :
+        if n < 1:
             n = len(sched_getaffinity(0))
         cls.num_threads = n
         set_num_threads(n)
@@ -23,12 +26,17 @@ class Compiler:
     @classmethod
     def compile(cls, code, signature=None):
         parallel = False
-        if hasattr(code, 'is_parallel'):
+        if hasattr(code, "is_parallel"):
             parallel = code.is_parallel and cls.num_threads > 1
-        
+
         if cls.is_enabled:
-            return njit(signature, fastmath=True, nogil=True, error_model='numpy',
-                        parallel=parallel)(code)
+            return njit(
+                signature,
+                fastmath=True,
+                nogil=True,
+                error_model="numpy",
+                parallel=parallel,
+            )(code)
         return code
 
     @classmethod
@@ -37,6 +45,7 @@ class Compiler:
             return prange
         else:
             return range
+
 
 Compiler.set_enabled(True)
 Compiler.set_num_threads(1)

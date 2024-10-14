@@ -1,23 +1,24 @@
 from collections import defaultdict
-from threading import Thread, Event
-from queue import Queue, Full
 from contextlib import nullcontext
-from typing import Sequence, TYPE_CHECKING
+from queue import Full, Queue
+from threading import Event, Thread
+from typing import TYPE_CHECKING, Sequence
 
 import torch as ch
 
+from ..pipeline.compiler import Compiler
 from ..traversal_order.quasi_random import QuasiRandom
 from ..utils import chunks
-from ..pipeline.compiler import Compiler
 
 if TYPE_CHECKING:
     from .loader import Loader
-    
+
 IS_CUDA = ch.cuda.is_available()
 
-QUASIRANDOM_ERROR_MSG = '''Not enough memory; try setting quasi-random ordering
+QUASIRANDOM_ERROR_MSG = """Not enough memory; try setting quasi-random ordering
 (`OrderOption.QUASI_RANDOM`) in the dataloader constructor's `order` argument.
-'''
+"""
+
 
 def select_buffer(buffer, batch_slot, count):
     """Util function to select the relevent subpart of a buffer for a given
@@ -31,13 +32,21 @@ def select_buffer(buffer, batch_slot, count):
 
 
 class EpochIterator(Thread):
-    def __init__(self, loader: 'Loader', order: Sequence[int], return_indices: bool, return_type: str):
+    def __init__(
+        self,
+        loader: "Loader",
+        order: Sequence[int],
+        return_indices: bool,
+        return_type: str,
+    ):
         super().__init__(daemon=True)
 
         if return_type not in ["tuple", "dict"]:
-            raise ValueError(f"return_type must be either 'tuple' or 'dict', got {return_type}")
+            raise ValueError(
+                f"return_type must be either 'tuple' or 'dict', got {return_type}"
+            )
 
-        self.loader: 'Loader' = loader
+        self.loader: "Loader" = loader
         self.order = order
         self.metadata = loader.reader.metadata
         self.current_batch_slot = 0
@@ -58,18 +67,19 @@ class EpochIterator(Thread):
         except MemoryError as e:
             if loader.traversal_order != QuasiRandom:
                 print(QUASIRANDOM_ERROR_MSG)
-                print('Full error below:')
+                print("Full error below:")
 
             raise e
 
         self.storage_state = self.memory_context.state
 
-        self.cuda_streams = [(ch.cuda.Stream() if IS_CUDA else None)
-                             for _ in range(self.loader.batches_ahead + 2)]
+        self.cuda_streams = [
+            (ch.cuda.Stream() if IS_CUDA else None)
+            for _ in range(self.loader.batches_ahead + 2)
+        ]
 
         self.memory_allocations = self.loader.graph.allocate_memory(
-            self.loader.batch_size,
-            self.loader.batches_ahead + 2
+            self.loader.batch_size, self.loader.batches_ahead + 2
         )
 
         self.start()
@@ -84,8 +94,7 @@ class EpochIterator(Thread):
             while True:
                 ixes = next(self.iter_ixes)
                 slot = self.current_batch_slot
-                self.current_batch_slot = (
-                    slot + 1) % (self.loader.batches_ahead + 2)
+                self.current_batch_slot = (slot + 1) % (self.loader.batches_ahead + 2)
                 result = self.run_pipeline(b_ix, ixes, slot, events[slot])
                 # print("RES", b_ix, "ready")
                 to_output = (slot, result)
@@ -106,7 +115,9 @@ class EpochIterator(Thread):
                     # Therefore batch_slot - batch_ahead must have all it's work submitted
                     # We will record an event of all the work submitted on the main stream
                     # and make sure no one overwrite the data until they are done
-                    just_finished_slot = (slot - self.loader.batches_ahead - 1) % (self.loader.batches_ahead + 2)
+                    just_finished_slot = (slot - self.loader.batches_ahead - 1) % (
+                        self.loader.batches_ahead + 2
+                    )
                     # print("JFS", just_finished_slot)
                     event = ch.cuda.Event()
                     event.record(self.current_stream)
@@ -126,7 +137,6 @@ class EpochIterator(Thread):
             ctx = nullcontext()
         first_stage = False
 
-
         code, outputs = self.loader.code
         with ctx:
             if IS_CUDA:
@@ -134,30 +144,33 @@ class EpochIterator(Thread):
                     cuda_event.wait()
 
             args = {
-                'batch_indices': batch_indices,
-                'storage_state': self.storage_state,
-                'metadata': self.metadata,
+                "batch_indices": batch_indices,
+                "storage_state": self.storage_state,
+                "metadata": self.metadata,
                 **{
-                    f'memory_{k}':select_buffer(v, batch_slot, len(batch_indices))
-                    for (k, v) in self.memory_allocations['operation'].items()
+                    f"memory_{k}": select_buffer(v, batch_slot, len(batch_indices))
+                    for (k, v) in self.memory_allocations["operation"].items()
                 },
                 **{
-                    f'shared_memory_{k}': select_buffer(v, batch_slot, len(batch_indices))
-                    for (k, v) in self.memory_allocations['shared'].items()
-                }
+                    f"shared_memory_{k}": select_buffer(
+                        v, batch_slot, len(batch_indices)
+                    )
+                    for (k, v) in self.memory_allocations["shared"].items()
+                },
             }
 
             for stage_code, define_outputs in code:
                 results = stage_code(**args)
                 for node_id, result in zip(define_outputs, results):
-                    args[f'result_{node_id}'] = result
+                    args[f"result_{node_id}"] = result
                 pass
 
             if self.return_type == "tuple":
-                result = tuple(args[f'result_{x}'] for x in outputs)
+                result = tuple(args[f"result_{x}"] for x in outputs)
             else:
                 result = {
-                    k: args[f'result_{x}'] for x, k in zip(outputs, self.loader.reader.handlers.keys())
+                    k: args[f"result_{x}"]
+                    for x, k in zip(outputs, self.loader.reader.handlers.keys())
                 }
 
             if self.return_indices:
@@ -186,4 +199,3 @@ class EpochIterator(Thread):
 
     def __del__(self):
         self.close()
-        

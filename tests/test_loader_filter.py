@@ -1,29 +1,28 @@
-from dataclasses import replace
-import torch as ch
-from ffcv.pipeline.allocation_query import AllocationQuery
-from ffcv.pipeline.compiler import Compiler
-import numpy as np
-from typing import Callable
-from assertpy import assert_that
-from torch.utils.data import Dataset
 import logging
 import os
-from assertpy import assert_that
-from tempfile import NamedTemporaryFile
-from ffcv.pipeline.operation import Operation
-from ffcv.transforms.ops import ToTensor
+from dataclasses import replace
 from multiprocessing import cpu_count
+from tempfile import NamedTemporaryFile
+from typing import Callable
 
-from ffcv.writer import DatasetWriter
-from ffcv.reader import Reader
-from ffcv.loader import Loader
-from ffcv.fields import IntField, FloatField, BytesField
-from ffcv.fields.basics import FloatDecoder
-from ffcv.pipeline.state import State
-
+import numpy as np
+import torch as ch
+from assertpy import assert_that
 from test_writer import DummyDataset
+from torch.utils.data import Dataset
 
-numba_logger = logging.getLogger('numba')
+from ffcv.fields import BytesField, FloatField, IntField
+from ffcv.fields.basics import FloatDecoder
+from ffcv.loader import Loader
+from ffcv.pipeline.allocation_query import AllocationQuery
+from ffcv.pipeline.compiler import Compiler
+from ffcv.pipeline.operation import Operation
+from ffcv.pipeline.state import State
+from ffcv.reader import Reader
+from ffcv.transforms.ops import ToTensor
+from ffcv.writer import DatasetWriter
+
+numba_logger = logging.getLogger("numba")
 numba_logger.setLevel(logging.WARNING)
 
 
@@ -33,10 +32,17 @@ class Doubler(Operation):
         def code(x, dst):
             dst[:] = x * 2
             return dst
+
         return code
 
     def declare_state_and_memory(self, previous_state: State):
-        return (previous_state, AllocationQuery(previous_state.shape, previous_state.dtype, previous_state.device))
+        return (
+            previous_state,
+            AllocationQuery(
+                previous_state.shape, previous_state.dtype, previous_state.device
+            ),
+        )
+
 
 def test_basic_simple():
     length = 600
@@ -44,26 +50,28 @@ def test_basic_simple():
     with NamedTemporaryFile() as handle:
         file_name = handle.name
         dataset = DummyDataset(length)
-        writer = DatasetWriter(file_name, {
-            'index': IntField(),
-            'value': FloatField()
-        })
+        writer = DatasetWriter(file_name, {"index": IntField(), "value": FloatField()})
 
         writer.from_indexed_dataset(dataset)
 
         Compiler.set_enabled(True)
 
-        loader = Loader(file_name, batch_size, num_workers=min(5, cpu_count()), seed=17,
-                        pipelines={
-                            'value': [FloatDecoder(), Doubler(), ToTensor()],
-                        })
+        loader = Loader(
+            file_name,
+            batch_size,
+            num_workers=min(5, cpu_count()),
+            seed=17,
+            pipelines={
+                "value": [FloatDecoder(), Doubler(), ToTensor()],
+            },
+        )
 
         def cond(value):
             value = value[0]
             result = value < 1 and value >= 0.5
             return result
 
-        filtered = loader.filter('value', cond)
+        filtered = loader.filter("value", cond)
 
         assert_that(len(filtered)).is_greater_than(0)
         for index, values in filtered:

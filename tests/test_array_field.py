@@ -1,16 +1,17 @@
-from ctypes import pointer
-from tempfile import NamedTemporaryFile
 from collections import defaultdict
-from assertpy.assertpy import assert_that
+from ctypes import pointer
 from multiprocessing import cpu_count
+from tempfile import NamedTemporaryFile
 
+import numpy as np
 import torch as ch
 from assertpy import assert_that
-import numpy as np
+from assertpy.assertpy import assert_that
 from torch.utils.data import Dataset
-from ffcv import DatasetWriter
+
+from ffcv import DatasetWriter, Loader
 from ffcv.fields import IntField, NDArrayField, TorchTensorField
-from ffcv import Loader
+
 
 class DummyActivationsDataset(Dataset):
 
@@ -26,11 +27,12 @@ class DummyActivationsDataset(Dataset):
         if index >= self.n_samples:
             raise IndexError()
         np.random.seed(index)
-        to_return = np.random.randn(*self.shape).astype('<f4')
+        to_return = np.random.randn(*self.shape).astype("<f4")
         if self.is_ch:
             to_return = ch.from_numpy(to_return)
 
         return index, to_return
+
 
 class TripleDummyActivationsDataset(Dataset):
 
@@ -45,10 +47,11 @@ class TripleDummyActivationsDataset(Dataset):
         if index >= self.n_samples:
             raise IndexError()
         np.random.seed(index)
-        d1 = np.random.randn(*self.shape).astype('<f4')
-        d2 = np.random.randn(*self.shape).astype('<f4')
-        d3 = np.random.randn(*self.shape).astype('<f4')
+        d1 = np.random.randn(*self.shape).astype("<f4")
+        d2 = np.random.randn(*self.shape).astype("<f4")
+        d3 = np.random.randn(*self.shape).astype("<f4")
         return index, d1, d2, d3
+
 
 def run_test(n_samples, shape, is_ch=False):
     with NamedTemporaryFile() as handle:
@@ -58,12 +61,11 @@ def run_test(n_samples, shape, is_ch=False):
         if is_ch:
             field = TorchTensorField(ch.float32, shape)
         else:
-            field = NDArrayField(np.dtype('<f4'), shape)
+            field = NDArrayField(np.dtype("<f4"), shape)
 
-        writer = DatasetWriter(name, {
-            'index': IntField(),
-            'activations': field
-        }, num_workers=3)
+        writer = DatasetWriter(
+            name, {"index": IntField(), "activations": field}, num_workers=3
+        )
 
         writer.from_indexed_dataset(dataset)
 
@@ -79,8 +81,10 @@ def run_test(n_samples, shape, is_ch=False):
 def test_simple_activations():
     run_test(4096, (2048,))
 
+
 def test_simple_activations_ch():
     run_test(4096, (2048,), True)
+
 
 def test_multi_fields():
     n_samples = 4096
@@ -89,20 +93,23 @@ def test_multi_fields():
     with NamedTemporaryFile() as handle:
         name = handle.name
         dataset = TripleDummyActivationsDataset(n_samples, shape)
-        writer = DatasetWriter(name, {
-            'index': IntField(),
-            'activations': NDArrayField(np.dtype('<f4'), shape),
-            'activations2': NDArrayField(np.dtype('<f4'), shape),
-            'activations3': NDArrayField(np.dtype('<f4'), shape)
-        }, num_workers=1)
-
+        writer = DatasetWriter(
+            name,
+            {
+                "index": IntField(),
+                "activations": NDArrayField(np.dtype("<f4"), shape),
+                "activations2": NDArrayField(np.dtype("<f4"), shape),
+                "activations3": NDArrayField(np.dtype("<f4"), shape),
+            },
+            num_workers=1,
+        )
 
         writer.from_indexed_dataset(dataset)
 
         loader = Loader(name, batch_size=3, num_workers=min(5, cpu_count()))
         page_size_l2 = int(np.log2(loader.reader.page_size))
-        sample_ids = loader.reader.alloc_table['sample_id']
-        pointers = loader.reader.alloc_table['ptr']
+        sample_ids = loader.reader.alloc_table["sample_id"]
+        pointers = loader.reader.alloc_table["ptr"]
         pages = pointers >> page_size_l2
         sample_to_pages = defaultdict(set)
 

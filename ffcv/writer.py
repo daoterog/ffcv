@@ -1,23 +1,23 @@
-from functools import partial
-from typing import Callable, List, Mapping
-from os import SEEK_END, path, sched_getaffinity
-import numpy as np
-from time import sleep
 import ctypes
-from multiprocessing import (shared_memory, cpu_count, Queue, Process, Value)
+from functools import partial
+from multiprocessing import Process, Queue, Value, cpu_count, shared_memory
+from os import SEEK_END, path, sched_getaffinity
+from time import sleep
+from typing import Callable, List, Mapping
 
+import numpy as np
 from tqdm import tqdm
 from tqdm.contrib.concurrent import thread_map
 
-from .utils import chunks, is_power_of_2
 from .fields.base import Field
 from .memory_allocator import MemoryAllocator
-from .types import (TYPE_ID_HANDLER, get_metadata_type, HeaderType,
-                    FieldDescType, CURRENT_VERSION, ALLOC_TABLE_TYPE)
-
+from .types import (ALLOC_TABLE_TYPE, CURRENT_VERSION, TYPE_ID_HANDLER,
+                    FieldDescType, HeaderType, get_metadata_type)
+from .utils import chunks, is_power_of_2
 
 MIN_PAGE_SIZE = 1 << 21  # 2MiB, which is the most common HugePage size
 MAX_PAGE_SIZE = 1 << 32  # Biggest page size that will not overflow uint32
+
 
 def from_shard(shard, pipeline):
     # We import webdataset here so that it desn't crash if it's not required
@@ -27,6 +27,7 @@ def from_shard(shard, pipeline):
     dataset = WebDataset(shard)
     dataset = pipeline(dataset)
     return dataset
+
 
 def count_samples_in_shard(shard, pipeline):
     #
@@ -50,8 +51,10 @@ def handle_sample(sample, dest_ix, field_names, metadata, allocator, fields):
 
             # We extract the sample in question from the dataset
             # We write each field individually to the metadata region
-            for field_name, field, field_value in zip(field_names, fields.values(), sample):
-                destination = metadata[field_name][dest_ix: dest_ix + 1]
+            for field_name, field, field_value in zip(
+                field_names, fields.values(), sample
+            ):
+                destination = metadata[field_name][dest_ix : dest_ix + 1]
                 field.encode(destination, field_value, allocator.malloc)
             # We managed to write all the data without reaching
             # the end of the page so we stop retrying
@@ -62,8 +65,17 @@ def handle_sample(sample, dest_ix, field_names, metadata, allocator, fields):
             if i == 1:
                 raise
 
-def worker_job_webdataset(input_queue, metadata_sm, metadata_type, fields,
-               allocator, done_number, allocations_queue, pipeline):
+
+def worker_job_webdataset(
+    input_queue,
+    metadata_sm,
+    metadata_type,
+    fields,
+    allocator,
+    done_number,
+    allocations_queue,
+    pipeline,
+):
 
     metadata = np.frombuffer(metadata_sm.buf, dtype=metadata_type)
     field_names = metadata_type.names
@@ -94,9 +106,16 @@ def worker_job_webdataset(input_queue, metadata_sm, metadata_type, fields,
     allocations_queue.put(allocator.allocations)
 
 
-
-def worker_job_indexed_dataset(input_queue, metadata_sm, metadata_type, fields,
-               allocator, done_number, allocations_queue, dataset):
+def worker_job_indexed_dataset(
+    input_queue,
+    metadata_sm,
+    metadata_type,
+    fields,
+    allocator,
+    done_number,
+    allocations_queue,
+    dataset,
+):
 
     metadata = np.frombuffer(metadata_sm.buf, dtype=metadata_type)
     field_names = metadata_type.names
@@ -123,7 +142,7 @@ def worker_job_indexed_dataset(input_queue, metadata_sm, metadata_type, fields,
     allocations_queue.put(allocator.allocations)
 
 
-class DatasetWriter():
+class DatasetWriter:
     """Writes given dataset into FFCV format (.beton).
     Supports indexable objects (e.g., PyTorch Datasets) and webdataset.
 
@@ -138,8 +157,14 @@ class DatasetWriter():
     num_workers : int
         Number of processes to use
     """
-    def __init__(self, fname: str, fields: Mapping[str, Field],
-                 page_size: int = 4 * MIN_PAGE_SIZE, num_workers: int = -1):
+
+    def __init__(
+        self,
+        fname: str,
+        fields: Mapping[str, Field],
+        page_size: int = 4 * MIN_PAGE_SIZE,
+        num_workers: int = -1,
+    ):
         self.fields = fields
         self.fname = fname
         self.metadata_type = get_metadata_type(list(self.fields.values()))
@@ -150,7 +175,7 @@ class DatasetWriter():
             self.num_workers = len(sched_getaffinity(0))
 
         if not is_power_of_2(page_size):
-            raise ValueError(f'page_size isnt a power of 2')
+            raise ValueError(f"page_size isnt a power of 2")
         if page_size < MIN_PAGE_SIZE:
             raise ValueError(f"page_size can't be lower than{MIN_PAGE_SIZE}")
         if page_size >= MAX_PAGE_SIZE:
@@ -160,13 +185,13 @@ class DatasetWriter():
 
     def prepare(self):
 
-        with open(self.fname, 'wb') as fp:
+        with open(self.fname, "wb") as fp:
             # Prepare the header data
             header = np.zeros(1, dtype=HeaderType)[0]
-            header['version'] = CURRENT_VERSION
-            header['num_samples'] = self.num_samples
-            header['num_fields'] = len(self.fields)
-            header['page_size'] = self.page_size
+            header["version"] = CURRENT_VERSION
+            header["num_samples"] = self.num_samples
+            header["num_fields"] = len(self.fields)
+            header["page_size"] = self.page_size
             self.header = header
 
             # We will write the header at the end because we need to know where
@@ -174,23 +199,22 @@ class DatasetWriter():
             # We still write it here to make space for it later
             fp.write(self.header.tobytes())
 
-
             # Writes the information about the fields
-            fields_descriptor = np.zeros(len(self.fields),
-                                              dtype=FieldDescType)
+            fields_descriptor = np.zeros(len(self.fields), dtype=FieldDescType)
             field_type_to_type_id = {v: k for (k, v) in TYPE_ID_HANDLER.items()}
 
-            fieldname_max_len = fields_descriptor[0]['name'].shape[0]
+            fieldname_max_len = fields_descriptor[0]["name"].shape[0]
 
             for i, (name, field) in enumerate(self.fields.items()):
                 type_id = field_type_to_type_id.get(type(field), 255)
-                encoded_name = name.encode('ascii')
-                encoded_name = np.frombuffer(encoded_name, dtype='<u1')
+                encoded_name = name.encode("ascii")
+                encoded_name = np.frombuffer(encoded_name, dtype="<u1")
                 actual_length = min(fieldname_max_len, len(encoded_name))
-                fields_descriptor[i]['type_id'] = type_id
-                fields_descriptor[i]['name'][:actual_length] = (
-                    encoded_name[:actual_length])
-                fields_descriptor[i]['arguments'][:] = field.to_binary()[0]
+                fields_descriptor[i]["type_id"] = type_id
+                fields_descriptor[i]["name"][:actual_length] = encoded_name[
+                    :actual_length
+                ]
+                fields_descriptor[i]["arguments"][:] = field.to_binary()[0]
 
             fp.write(fields_descriptor.tobytes())
 
@@ -198,13 +222,13 @@ class DatasetWriter():
 
         # Shared memory for all the writers to fill the information
         self.metadata_sm = 3
-        self.metadata_start = (HeaderType.itemsize + fields_descriptor.nbytes)
+        self.metadata_start = HeaderType.itemsize + fields_descriptor.nbytes
 
-        self.metadata_sm = shared_memory.SharedMemory(create=True,
-                                                      size=total_metadata_size)
+        self.metadata_sm = shared_memory.SharedMemory(
+            create=True, size=total_metadata_size
+        )
 
         self.data_region_start = self.metadata_start + total_metadata_size
-
 
     def _write_common(self, num_samples, queue_content, work_fn, extra_worker_args):
         self.num_samples = num_samples
@@ -230,21 +254,27 @@ class DatasetWriter():
 
         # Define counters we need to orchestrate the workers
         done_number = Value(ctypes.c_uint64, 0)
-        allocator = MemoryAllocator(self.fname,
-                                    self.data_region_start,
-                                    self.page_size)
+        allocator = MemoryAllocator(self.fname, self.data_region_start, self.page_size)
 
         # Arguments that have to be passed to the workers
-        worker_args = (workqueue, self.metadata_sm,
-                       self.metadata_type, self.fields,
-                       allocator, done_number,
-                       allocations_queue, *extra_worker_args)
+        worker_args = (
+            workqueue,
+            self.metadata_sm,
+            self.metadata_type,
+            self.fields,
+            allocator,
+            done_number,
+            allocations_queue,
+            *extra_worker_args,
+        )
 
         # Create the workers
-        processes = [Process(target=work_fn, args=worker_args)
-                     for _ in range(self.num_workers)]
+        processes = [
+            Process(target=work_fn, args=worker_args) for _ in range(self.num_workers)
+        ]
         # start the workers
-        for p in processes: p.start()
+        for p in processes:
+            p.start()
         # Wait for all the workers to be done
 
         # Display progress
@@ -268,10 +298,13 @@ class DatasetWriter():
         self.metadata_sm.close()
         self.metadata_sm.unlink()
 
-
-    def from_indexed_dataset(self, dataset,
-                              indices: List[int]=None, chunksize=100,
-                              shuffle_indices: bool = False):
+    def from_indexed_dataset(
+        self,
+        dataset,
+        indices: List[int] = None,
+        chunksize=100,
+        shuffle_indices: bool = False,
+    ):
         """Read dataset from an indexable dataset.
         See https://docs.ffcv.io/writing_datasets.html#indexable-dataset for sample usage.
 
@@ -298,9 +331,12 @@ class DatasetWriter():
         # to write in the metadata array
         indices: List[int] = list(enumerate(indices))
 
-        self._write_common(len(indices), chunks(indices, chunksize),
-                           worker_job_indexed_dataset, (dataset, ))
-
+        self._write_common(
+            len(indices),
+            chunks(indices, chunksize),
+            worker_job_indexed_dataset,
+            (dataset,),
+        )
 
     def from_webdataset(self, shards: List[str], pipeline: Callable):
         """Read from webdataset-like format.
@@ -320,12 +356,11 @@ class DatasetWriter():
         offsets = np.cumsum([0] + lengths)[:-1]
 
         todos = zip(shards, offsets)
-        self._write_common(total_len, todos, worker_job_webdataset, (pipeline, ))
+        self._write_common(total_len, todos, worker_job_webdataset, (pipeline,))
 
-
-    def finalize(self, allocations) :
+    def finalize(self, allocations):
         # Writing metadata
-        with open(self.fname, 'r+b') as fp:
+        with open(self.fname, "r+b") as fp:
             fp.seek(self.metadata_start)
             fp.write(self.metadata_sm.buf)
 
@@ -337,14 +372,14 @@ class DatasetWriter():
             # Retrieve all the allocations from the workers
             # Turn them into a numpy array
             try:
-                allocation_table = np.array([
-                    np.array(x, dtype=ALLOC_TABLE_TYPE) for x in allocations if len(x)
-                ])
+                allocation_table = np.array(
+                    [np.array(x, dtype=ALLOC_TABLE_TYPE) for x in allocations if len(x)]
+                )
             except:
                 allocation_table = np.array([]).view(ALLOC_TABLE_TYPE)
             fp.write(allocation_table.tobytes())
 
-            self.header['alloc_table_ptr'] = allocation_table_location
+            self.header["alloc_table_ptr"] = allocation_table_location
             # We go at the start of the file
             fp.seek(0)
             # And write the header

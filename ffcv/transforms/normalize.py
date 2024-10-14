@@ -1,22 +1,25 @@
 """
 Image normalization
 """
+
 from collections.abc import Sequence
-from typing import Tuple
+from dataclasses import replace
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 import torch as ch
 from numpy import dtype
 from numpy.random import rand
-from dataclasses import replace
-from typing import Callable, Optional, Tuple
+
 from ..pipeline.allocation_query import AllocationQuery
+from ..pipeline.compiler import Compiler
 from ..pipeline.operation import Operation
 from ..pipeline.state import State
-from ..pipeline.compiler import Compiler
+
 
 def ch_dtype_from_numpy(dtype):
     return ch.from_numpy(np.zeros((), dtype=dtype)).dtype
+
 
 class NormalizeImage(Operation):
     """Fast implementation of normalization and type conversion for uint8 images
@@ -36,8 +39,7 @@ class NormalizeImage(Operation):
         as the equivalent torch dtype.
     """
 
-    def __init__(self, mean: np.ndarray, std: np.ndarray,
-                 type: np.dtype):
+    def __init__(self, mean: np.ndarray, std: np.ndarray, type: np.dtype):
         super().__init__()
         table = (np.arange(256)[:, None] - mean[None, :]) / std[None, :]
         self.original_dtype = type
@@ -48,10 +50,10 @@ class NormalizeImage(Operation):
         table = table.view(type)
         self.lookup_table = table
         self.previous_shape = None
-        self.mode = 'cpu'
+        self.mode = "cpu"
 
     def generate_code(self) -> Callable:
-        if self.mode == 'cpu':
+        if self.mode == "cpu":
             return self.generate_code_cpu()
         return self.generate_code_gpu()
 
@@ -62,13 +64,20 @@ class NormalizeImage(Operation):
         import pytorch_pfn_extras as ppe
 
         tn = np.zeros((), dtype=self.dtype).dtype.name
-        kernel = cp.ElementwiseKernel(f'uint8 input, raw {tn} table', f'{tn} output', 'output = table[input * 3 + i % 3];')
+        kernel = cp.ElementwiseKernel(
+            f"uint8 input, raw {tn} table",
+            f"{tn} output",
+            "output = table[input * 3 + i % 3];",
+        )
         final_type = ch_dtype_from_numpy(self.original_dtype)
         s = self
+
         def normalize_convert(images, result):
             B, C, H, W = images.shape
             table = self.lookup_table.view(-1)
-            assert images.is_contiguous(memory_format=ch.channels_last), 'Images need to be in channel last'
+            assert images.is_contiguous(
+                memory_format=ch.channels_last
+            ), "Images need to be in channel last"
             result = result[:B]
             result_c = result.view(-1)
             images = images.permute(0, 2, 3, 1).view(-1)
@@ -80,7 +89,9 @@ class NormalizeImage(Operation):
             # Mark the result as channel last
             final_result = result.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
-            assert final_result.is_contiguous(memory_format=ch.channels_last), 'Images need to be in channel last'
+            assert final_result.is_contiguous(
+                memory_format=ch.channels_last
+            ), "Images need to be in channel last"
 
             return final_result.view(final_type)
 
@@ -108,22 +119,23 @@ class NormalizeImage(Operation):
         normalize_convert.with_indices = True
         return normalize_convert
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
 
-        if previous_state.device == ch.device('cpu'):
+        if previous_state.device == ch.device("cpu"):
             new_state = replace(previous_state, jit_mode=True, dtype=self.dtype)
             return new_state, AllocationQuery(
                 shape=previous_state.shape,
                 dtype=self.dtype,
-                device=previous_state.device
+                device=previous_state.device,
             )
 
         else:
-            self.mode = 'gpu'
+            self.mode = "gpu"
             new_state = replace(previous_state, dtype=self.dtype)
 
             gpu_type = ch_dtype_from_numpy(self.dtype)
-
 
             # Copy the lookup table into the proper device
             try:
@@ -133,7 +145,5 @@ class NormalizeImage(Operation):
             self.lookup_table = self.lookup_table.to(previous_state.device)
 
             return new_state, AllocationQuery(
-                shape=previous_state.shape,
-                device=previous_state.device,
-                dtype=gpu_type
+                shape=previous_state.shape, device=previous_state.device, dtype=gpu_type
             )

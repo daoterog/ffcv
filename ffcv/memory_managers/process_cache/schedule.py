@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Mapping
 from queue import Queue
+from typing import Mapping
 
 import numpy as np
 
@@ -21,7 +21,8 @@ class Schedule:
     # Iteration at which we can discard a page
     leaving_at: Mapping[int, int]
 
-def compute_schedule(pages_in_batch, prefetch_ahead = 3):
+
+def compute_schedule(pages_in_batch, prefetch_ahead=3):
     # We determine what is the early and latest times we will need a page
     page_end = {}
     page_start = {}
@@ -45,9 +46,8 @@ def compute_schedule(pages_in_batch, prefetch_ahead = 3):
         entering_at[page_start[page]].add(page)
         leaving_at[page_end[page] + 1].add(page)
 
-
-     # We now find how many pages we need to keep in our buffer
-     # We also determine where which page is going to reside
+    # We now find how many pages we need to keep in our buffer
+    # We also determine where which page is going to reside
     next_slot = 0
     page_to_slot = {}
     free_slots = set()
@@ -73,13 +73,14 @@ def compute_schedule(pages_in_batch, prefetch_ahead = 3):
 
             page_to_slot[page] = slot
 
-    return Schedule(next_slot, page_to_slot,
-                    can_prefetch_at, entering_at, leaving_at)
+    return Schedule(next_slot, page_to_slot, can_prefetch_at, entering_at, leaving_at)
 
-class ScheduleExecutor():
 
-    def __init__(self, fname: str, schedule: Schedule,
-                 memory: np.ndarray, num_workers: int=12):
+class ScheduleExecutor:
+
+    def __init__(
+        self, fname: str, schedule: Schedule, memory: np.ndarray, num_workers: int = 12
+    ):
         self.fname = fname
         self.schedule = schedule
         self.memory = memory
@@ -95,11 +96,12 @@ class ScheduleExecutor():
         if self.entered:
             raise Exception(msg)
         self.entered = True
-# Create the number of threads we were asked to
+        # Create the number of threads we were asked to
         threads = []
         for _ in range(self.num_workers):
-            thread = PageReader(self.fname, self.queries,
-                                self.loaded_queue, self.memory)
+            thread = PageReader(
+                self.fname, self.queries, self.loaded_queue, self.memory
+            )
             thread.start()
             threads.append(thread)
 

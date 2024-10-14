@@ -2,7 +2,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from ..base import MemoryManager, MemoryContext
+from ..base import MemoryContext, MemoryManager
 from ..common import BATCHES_TYPE
 from .schedule import Schedule, ScheduleExecutor, compute_schedule
 
@@ -17,8 +17,7 @@ class ProcessCacheContext(MemoryContext):
 
     @property
     def state(self):
-        return (self.memory, self.manager.ptrs,
-                self.manager.sizes, self.page_to_slot)
+        return (self.memory, self.manager.ptrs, self.manager.sizes, self.page_to_slot)
 
     def __enter__(self):
         pages_at_batch = []
@@ -29,11 +28,8 @@ class ProcessCacheContext(MemoryContext):
             pages_at_batch.append(pages_needed)
 
         self.schedule = compute_schedule(pages_at_batch)
-        self.memory = np.zeros((self.schedule.num_slots, self.page_size),
-                               dtype='<u1')
-        self.executor = ScheduleExecutor(self.fname,
-                                         self.schedule,
-                                         self.memory)
+        self.memory = np.zeros((self.schedule.num_slots, self.page_size), dtype="<u1")
+        self.executor = ScheduleExecutor(self.fname, self.schedule, self.memory)
 
         try:
             max_page = max(self.schedule.page_to_slot.keys())
@@ -53,7 +49,6 @@ class ProcessCacheContext(MemoryContext):
     def start_batch(self, batch: int):
         self.executor.load_batch(batch)
         return super().start_batch(batch)
-
 
     def __exit__(self, *args):
         self.executor.__exit__(*args)

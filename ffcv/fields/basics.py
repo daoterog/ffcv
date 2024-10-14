@@ -1,59 +1,65 @@
-from typing import Callable, TYPE_CHECKING, Tuple, Type
 from dataclasses import replace
+from typing import TYPE_CHECKING, Callable, Tuple, Type
 
 import numpy as np
 
-from .base import Field, ARG_TYPE
+from ..pipeline.allocation_query import AllocationQuery
 from ..pipeline.operation import Operation
 from ..pipeline.state import State
-from ..pipeline.allocation_query import AllocationQuery
+from .base import ARG_TYPE, Field
 
 if TYPE_CHECKING:
     from ..memory_managers.base import MemoryManager
+
 
 class BasicDecoder(Operation):
     """For decoding scalar fields
 
     This Decoder can be extend to decode any fixed length numpy data type
     """
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, AllocationQuery]:
+
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, AllocationQuery]:
         my_shape = (1,)
         return (
-            replace(previous_state, jit_mode=True,
-                    shape=my_shape,
-                    dtype=self.dtype),
-            AllocationQuery(my_shape, dtype=self.dtype)
+            replace(previous_state, jit_mode=True, shape=my_shape, dtype=self.dtype),
+            AllocationQuery(my_shape, dtype=self.dtype),
         )
 
     def generate_code(self) -> Callable:
         def decoder(indices, destination, metadata, storage_state):
             for ix, sample_id in enumerate(indices):
                 destination[ix] = metadata[sample_id]
-            return destination[:len(indices)]
+            return destination[: len(indices)]
 
         return decoder
 
+
 class IntDecoder(BasicDecoder):
-    """Decoder for signed integers scalars (int64)
-    """
-    dtype = np.dtype('<i8')
+    """Decoder for signed integers scalars (int64)"""
+
+    dtype = np.dtype("<i8")
+
 
 class FloatDecoder(BasicDecoder):
-    """Decoder for floating point scalars (float64)
-    """
-    dtype = np.dtype('<f8')
+    """Decoder for floating point scalars (float64)"""
+
+    dtype = np.dtype("<f8")
+
 
 class FloatField(Field):
     """
     A subclass of :class:`~ffcv.fields.Field` supporting (scalar) floating-point (float64)
     values.
     """
+
     def __init__(self):
         pass
 
     @property
     def metadata_type(self) -> np.dtype:
-        return np.dtype('<f8')
+        return np.dtype("<f8")
 
     @staticmethod
     def from_binary(binary: ARG_TYPE) -> Field:
@@ -68,14 +74,16 @@ class FloatField(Field):
     def get_decoder_class(self) -> Type[Operation]:
         return FloatDecoder
 
+
 class IntField(Field):
     """
     A subclass of :class:`~ffcv.fields.Field` supporting (scalar) integer
     values.
     """
+
     @property
     def metadata_type(self) -> np.dtype:
-        return np.dtype('<i8')
+        return np.dtype("<i8")
 
     @staticmethod
     def from_binary(binary: ARG_TYPE) -> Field:
@@ -90,4 +98,3 @@ class IntField(Field):
 
     def get_decoder_class(self) -> Type[Operation]:
         return IntDecoder
-

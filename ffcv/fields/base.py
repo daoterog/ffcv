@@ -1,11 +1,14 @@
 from __future__ import annotations
-from typing import Type
-import numpy as np
+
 from abc import ABC, abstractmethod
+from typing import Type
+
+import numpy as np
 
 from ..pipeline.operation import Operation
 
-ARG_TYPE = np.dtype([('', '<u1', 1024)])
+ARG_TYPE = np.dtype([("", "<u1", 1024)])
+
 
 class Field(ABC):
     """
@@ -22,6 +25,7 @@ class Field(ABC):
 
     See :ref:`here <TODO>` for information on how to implement a subclass of Field.
     """
+
     @property
     @abstractmethod
     def metadata_type(self) -> np.dtype:

@@ -1,24 +1,26 @@
 import string
-from ctypes import pointer
-from tempfile import NamedTemporaryFile
 from collections import defaultdict
+from ctypes import pointer
 from multiprocessing import cpu_count
+from tempfile import NamedTemporaryFile
 
-from assertpy import assert_that
 import numpy as np
+from assertpy import assert_that
 from torch.utils.data import Dataset
-from ffcv import DatasetWriter
+
+from ffcv import DatasetWriter, Loader
 from ffcv.fields import IntField, JSONField
-from ffcv.fields.bytes import BytesDecoder
 from ffcv.fields.basics import IntDecoder
-from ffcv import Loader
+from ffcv.fields.bytes import BytesDecoder
 
 options = list(string.ascii_uppercase + string.digits)
 
+
 def generate_random_string(low, high):
     length = np.random.randint(low, high)
-    content = ''.join(np.random.choice(options, size=length))
+    content = "".join(np.random.choice(options, size=length))
     return content
+
 
 class DummyDictDataset(Dataset):
 
@@ -36,25 +38,29 @@ class DummyDictDataset(Dataset):
         content = np.random.randint(0, 256, size=(length,))
         json_content = {}
         for i in range(3):
-            json_content[generate_random_string(5, 10)] = generate_random_string(50, 250)
+            json_content[generate_random_string(5, 10)] = generate_random_string(
+                50, 250
+            )
         return index, json_content
+
 
 def run_test(n_samples):
     with NamedTemporaryFile() as handle:
         name = handle.name
         dataset = DummyDictDataset(n_samples)
-        writer = DatasetWriter(name, {
-            'index': IntField(),
-            'activations': JSONField()
-        }, num_workers=min(3, cpu_count()))
+        writer = DatasetWriter(
+            name,
+            {"index": IntField(), "activations": JSONField()},
+            num_workers=min(3, cpu_count()),
+        )
 
         writer.from_indexed_dataset(dataset)
 
-        loader = Loader(name, batch_size=3, num_workers=min(5, cpu_count()),
-                        pipelines={
-                            'activations': [BytesDecoder()],
-                            'index': [IntDecoder()]
-                        }
+        loader = Loader(
+            name,
+            batch_size=3,
+            num_workers=min(5, cpu_count()),
+            pipelines={"activations": [BytesDecoder()], "index": [IntDecoder()]},
         )
         ix = 0
         for _, json_encoded in loader:
@@ -68,5 +74,6 @@ def run_test(n_samples):
 def test_simple_dict():
     run_test(32)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     test_simple_dict()

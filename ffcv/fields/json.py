@@ -1,12 +1,13 @@
 import json
 
-import torch as ch
 import numpy as np
+import torch as ch
 
 from .bytes import BytesField
 
-ENCODING = 'utf8'
-SEPARATOR = '\0'  # Null byte
+ENCODING = "utf8"
+SEPARATOR = "\0"  # Null byte
+
 
 class JSONField(BytesField):
     """A subclass of :class:`~ffcv.fields.BytesField` that encodes JSON data.
@@ -20,21 +21,18 @@ class JSONField(BytesField):
 
     @property
     def metadata_type(self) -> np.dtype:
-        return np.dtype([
-            ('ptr', '<u8'),
-            ('size', '<u8')
-        ])
+        return np.dtype([("ptr", "<u8"), ("size", "<u8")])
 
     def encode(self, destination, field, malloc):
         # Add null terminating byte
         content = (json.dumps(field) + SEPARATOR).encode(ENCODING)
-        field = np.frombuffer(content, dtype='uint8')
+        field = np.frombuffer(content, dtype="uint8")
         return super().encode(destination, field, malloc)
 
     @staticmethod
     def unpack(batch):
         """Convert back the output of a :class:`~ffcv.fields.JSONField` field produced by :class:`~ffcv.Loader` into an actual JSON.
-        
+
         It works both on an entire batch and will return an array of python dicts or a single sample and will simply return a dict.
         """
         if isinstance(batch, ch.Tensor):

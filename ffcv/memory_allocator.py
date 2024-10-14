@@ -1,27 +1,30 @@
-import numpy as np
-from time import sleep
-from os import SEEK_END
-from multiprocessing import Value
-from .utils import align_to_page
 import ctypes
+from multiprocessing import Value
+from os import SEEK_END
+from time import sleep
 
-class MemoryAllocator():
+import numpy as np
+
+from .utils import align_to_page
+
+
+class MemoryAllocator:
     def __init__(self, fname, offset_start, page_size):
         self.fname = fname
         self.offset = align_to_page(offset_start, page_size)
-        self.next_page_allocated  = Value(ctypes.c_uint64, 0)
-        self.next_page_written  = Value(ctypes.c_uint64, 0)
+        self.next_page_allocated = Value(ctypes.c_uint64, 0)
+        self.next_page_written = Value(ctypes.c_uint64, 0)
 
         self.page_size = page_size
         self.page_offset = 0
         self.my_page = -1
 
-        self.page_data = np.zeros(self.page_size, '<u1')
+        self.page_data = np.zeros(self.page_size, "<u1")
         self.allocations = []
         self.current_sample_id = None
 
     def __enter__(self):
-        self.fp = open(self.fname, 'ab', buffering=0)
+        self.fp = open(self.fname, "ab", buffering=0)
 
     def set_current_sample(self, current_sample_id):
         self.current_sample_id = current_sample_id
@@ -36,8 +39,9 @@ class MemoryAllocator():
     def malloc(self, size):
         # print(f"Allocating {size} bytes")
         if size > self.page_size:
-            raise ValueError(f"Tried allocating {size} but" +
-                             f" page size is {self.page_size}")
+            raise ValueError(
+                f"Tried allocating {size} but" + f" page size is {self.page_size}"
+            )
 
         if size > self.space_left_in_page:
             self.flush_page()
@@ -53,7 +57,9 @@ class MemoryAllocator():
             # We check if we already allocated space for this sample on
             # the page that is now full
             region_in_previous_page = False
-            while self.allocations and self.allocations[-1][0] == self.current_sample_id:
+            while (
+                self.allocations and self.allocations[-1][0] == self.current_sample_id
+            ):
                 # We have to revert the allocations we did and we are giving
                 # up on this sample.
                 self.allocations.pop()
@@ -67,7 +73,7 @@ class MemoryAllocator():
         previous_offset = self.page_offset
         self.page_offset += size
 
-        buffer = self.page_data[previous_offset:self.page_offset]
+        buffer = self.page_data[previous_offset : self.page_offset]
         ptr = self.offset + self.my_page * self.page_size + previous_offset
 
         # We return the pointer to the location in file and where to write
@@ -98,9 +104,8 @@ class MemoryAllocator():
             # print("Padding headers to align with page size")
             current_location = self.fp.seek(0, SEEK_END)
             null_bytes_to_write = expected_file_offset - current_location
-            self.fp.write(np.zeros(null_bytes_to_write, dtype='<u1').tobytes())
+            self.fp.write(np.zeros(null_bytes_to_write, dtype="<u1").tobytes())
             # print(f"current file pointer is no {self.fp.tell()} and should be {expected_file_offset}")
-
 
         self.fp.seek(expected_file_offset)
 
@@ -111,8 +116,6 @@ class MemoryAllocator():
         # We warn other processes that they are free to write the next page
         with self.next_page_written.get_lock():
             self.next_page_written.value += 1
-
-
 
     # Flush the last page and
     def __exit__(self, exc_type, exc_val, exc_tb):

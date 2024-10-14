@@ -5,26 +5,33 @@ General operations:
 - Conversion to PyTorch Tensor
 - Change device of Tensor
 """
-import torch as ch
-import numpy as np
+
+from dataclasses import replace
 from typing import Callable, Optional, Tuple
+
+import numpy as np
+import torch as ch
+
 from ..pipeline.allocation_query import AllocationQuery
 from ..pipeline.operation import Operation
 from ..pipeline.state import State
-from dataclasses import replace
 
 
 class ToTensor(Operation):
     """Convert from Numpy array to PyTorch Tensor."""
+
     def __init__(self):
         super().__init__()
 
     def generate_code(self) -> Callable:
         def to_tensor(inp, dst):
             return ch.from_numpy(inp)
+
         return to_tensor
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         new_dtype = ch.from_numpy(np.empty((), dtype=previous_state.dtype)).dtype
         return replace(previous_state, jit_mode=False, dtype=new_dtype), None
 
@@ -39,6 +46,7 @@ class ToDevice(Operation):
     non_blocking: bool
         Asynchronous if copying from CPU to GPU.
     """
+
     def __init__(self, device, non_blocking=True):
         super().__init__()
         self.device = device
@@ -50,16 +58,22 @@ class ToDevice(Operation):
         def to_device(inp, dst):
             if len(inp.shape) == 4:
                 if inp.is_contiguous(memory_format=ch.channels_last):
-                    dst = dst.reshape(inp.shape[0], inp.shape[2], inp.shape[3], inp.shape[1])
+                    dst = dst.reshape(
+                        inp.shape[0], inp.shape[2], inp.shape[3], inp.shape[1]
+                    )
                     dst = dst.permute(0, 3, 1, 2)
-            dst = dst[:inp.shape[0]]
+            dst = dst[: inp.shape[0]]
             dst.copy_(inp, non_blocking=self.non_blocking)
             return dst
 
         return to_device
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
-        return replace(previous_state, device=self.device), AllocationQuery(previous_state.shape, dtype=previous_state.dtype, device=self.device)
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
+        return replace(previous_state, device=self.device), AllocationQuery(
+            previous_state.shape, dtype=previous_state.dtype, device=self.device
+        )
 
 
 class ToTorchImage(Operation):
@@ -72,6 +86,7 @@ class ToTorchImage(Operation):
     convert_back_int16 : bool
         Convert to float16.
     """
+
     def __init__(self, channels_last=True, convert_back_int16=True):
         super().__init__()
         self.channels_last = channels_last
@@ -80,6 +95,7 @@ class ToTorchImage(Operation):
 
     def generate_code(self) -> Callable:
         do_conv = self.enable_int16conv
+
         def to_torch_image(inp: ch.Tensor, dst):
             # Returns a permuted view of the same tensor
             if do_conv:
@@ -92,12 +108,14 @@ class ToTorchImage(Operation):
                 return inp
 
             # Otherwise, need to fill the allocated memory with the contiguous tensor
-            dst[:inp.shape[0]] = inp.contiguous()
-            return dst[:inp.shape[0]]
+            dst[: inp.shape[0]] = inp.contiguous()
+            return dst[: inp.shape[0]]
 
         return to_torch_image
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         alloc = None
         H, W, C = previous_state.shape
         new_type = previous_state.dtype
@@ -119,6 +137,7 @@ class Convert(Operation):
     target_dtype: numpy.dtype or torch.dtype
         Target data type.
     """
+
     def __init__(self, target_dtype):
         super().__init__()
         self.target_dtype = target_dtype
@@ -132,7 +151,9 @@ class Convert(Operation):
         return convert
 
     # TODO: something weird about device to allocate on
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         return replace(previous_state, dtype=self.target_dtype), None
 
 
@@ -144,6 +165,7 @@ class View(Operation):
     target_dtype: numpy.dtype or torch.dtype
         Target data type.
     """
+
     def __init__(self, target_dtype):
         super().__init__()
         self.target_dtype = target_dtype
@@ -156,5 +178,7 @@ class View(Operation):
 
         return convert
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         return replace(previous_state, dtype=self.target_dtype, jit_mode=False), None

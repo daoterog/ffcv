@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Sequence
-from ..reader import Reader
+from typing import TYPE_CHECKING, Sequence
 
-from typing import TYPE_CHECKING
+from ..reader import Reader
 
 if TYPE_CHECKING:
     from ..loader.main_thread import Loader
 
+
 class TraversalOrder(ABC):
-    def __init__(self, loader: 'Loader'):
+    def __init__(self, loader: "Loader"):
         self.loader = loader
         self.indices = self.loader.indices
         self.seed = self.loader.seed
@@ -16,5 +16,5 @@ class TraversalOrder(ABC):
         self.sampler = None
 
     @abstractmethod
-    def sample_order(self, epoch:int) -> Sequence[int]:
+    def sample_order(self, epoch: int) -> Sequence[int]:
         raise NotImplemented()

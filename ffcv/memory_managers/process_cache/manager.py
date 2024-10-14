@@ -1,10 +1,11 @@
 import numba as nb
 import numpy as np
 
-from .context import ProcessCacheContext
 from ...pipeline.compiler import Compiler
-from ..base import MemoryManager, MemoryContext
+from ..base import MemoryContext, MemoryManager
 from ..common import BATCHES_TYPE
+from .context import ProcessCacheContext
+
 
 class ProcessCacheManager(MemoryManager):
 
@@ -40,6 +41,6 @@ class ProcessCacheManager(MemoryManager):
             page = address >> page_size_log2
             offset = address - (page << page_size_log2)
             page_slot = mem_state[3][page]
-            return mem_state[0][page_slot, offset:offset + size]
+            return mem_state[0][page_slot, offset : offset + size]
 
         return Compiler.compile(read)

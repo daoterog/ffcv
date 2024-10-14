@@ -1,23 +1,29 @@
+from typing import List, Union
+
 import torch as ch
 
-from typing import List, Union
-from .operation import Operation
-from ..transforms.module import ModuleWrapper
 from ..transforms import ToTensor
+from ..transforms.module import ModuleWrapper
+from .operation import Operation
+
 
 class PipelineSpec:
 
-    def __init__(self, source: Union[str, Operation], decoder: Operation = None,
-                 transforms:List[Operation] = None ):
+    def __init__(
+        self,
+        source: Union[str, Operation],
+        decoder: Operation = None,
+        transforms: List[Operation] = None,
+    ):
 
         self.source = source
         self.decoder = decoder
         if transforms is None:
             transforms = []
         self.transforms = transforms
-        self.default_pipeline = (decoder is None
-                                 and not transforms
-                                 and isinstance(source, str))
+        self.default_pipeline = (
+            decoder is None and not transforms and isinstance(source, str)
+        )
 
     def __repr__(self):
         return repr((self.source, self.decoder, self.transforms))
@@ -48,4 +54,3 @@ class PipelineSpec:
         for i, op in enumerate(self.transforms):
             if isinstance(op, ch.nn.Module):
                 self.transforms[i] = ModuleWrapper(op)
-            

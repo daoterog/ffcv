@@ -1,15 +1,17 @@
 """
 Poison images by adding a mask
 """
-from typing import Tuple
+
 from dataclasses import replace
+from typing import Callable, Optional, Tuple
 
 import numpy as np
-from typing import Callable, Optional, Tuple
+
 from ..pipeline.allocation_query import AllocationQuery
+from ..pipeline.compiler import Compiler
 from ..pipeline.operation import Operation
 from ..pipeline.state import State
-from ..pipeline.compiler import Compiler
+
 
 class Poison(Operation):
     """Poison specified images by adding a mask with given opacity.
@@ -27,8 +29,7 @@ class Poison(Operation):
         Clamps the final pixel values between these two values (default: (0, 255)).
     """
 
-    def __init__(self, mask: np.ndarray, alpha: np.ndarray,
-                 indices, clamp = (0, 255)):
+    def __init__(self, mask: np.ndarray, alpha: np.ndarray, indices, clamp=(0, 255)):
         super().__init__()
         self.mask = mask
         self.indices = np.sort(indices)
@@ -38,7 +39,7 @@ class Poison(Operation):
     def generate_code(self) -> Callable:
 
         alpha = np.repeat(self.alpha[:, :, None], 3, axis=2)
-        mask = self.mask.astype('float') * alpha
+        mask = self.mask.astype("float") * alpha
         to_poison = self.indices
         clamp = self.clamp
         my_range = Compiler.get_iterator()
@@ -63,7 +64,11 @@ class Poison(Operation):
 
         return poison
 
-    def declare_state_and_memory(self, previous_state: State) -> Tuple[State, Optional[AllocationQuery]]:
+    def declare_state_and_memory(
+        self, previous_state: State
+    ) -> Tuple[State, Optional[AllocationQuery]]:
         # We do everything in place
-        return (replace(previous_state, jit_mode=True), \
-                AllocationQuery(shape=previous_state.shape, dtype=np.dtype('float32')))
+        return (
+            replace(previous_state, jit_mode=True),
+            AllocationQuery(shape=previous_state.shape, dtype=np.dtype("float32")),
+        )

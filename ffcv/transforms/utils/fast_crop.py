@@ -1,19 +1,29 @@
 import ctypes
-from numba import njit
+
 import numpy as np
+from numba import njit
+
 from ...libffcv import ctypes_resize
 
-@njit(inline='always')
+
+@njit(inline="always")
 def resize_crop(source, start_row, end_row, start_col, end_col, destination):
-    ctypes_resize(0,
-                  source.ctypes.data,
-                  source.shape[0], source.shape[1],
-                  start_row, end_row, start_col, end_col,
-                  destination.ctypes.data,
-                  destination.shape[0], destination.shape[1])
+    ctypes_resize(
+        0,
+        source.ctypes.data,
+        source.shape[0],
+        source.shape[1],
+        start_row,
+        end_row,
+        start_col,
+        end_col,
+        destination.ctypes.data,
+        destination.shape[0],
+        destination.shape[1],
+    )
 
 
-@njit(parallel=False, fastmath=True, inline='always')
+@njit(parallel=False, fastmath=True, inline="always")
 def get_random_crop(height, width, scale, ratio):
     area = height * width
     log_ratio = np.log(ratio)
@@ -41,7 +51,7 @@ def get_random_crop(height, width, scale, ratio):
     return i, j, h, w
 
 
-@njit(parallel=False, fastmath=True, inline='always')
+@njit(parallel=False, fastmath=True, inline="always")
 def get_center_crop(height, width, ratio):
     s = min(height, width)
     c = int(ratio * s)

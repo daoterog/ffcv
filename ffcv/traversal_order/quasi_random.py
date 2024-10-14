@@ -1,8 +1,8 @@
 import random
-from typing import Sequence, TYPE_CHECKING
-from numba import njit
-import numpy as np
+from typing import TYPE_CHECKING, Sequence
 
+import numpy as np
+from numba import njit
 from torch.utils.data import DistributedSampler
 
 from .base import TraversalOrder
@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 
 
 @njit(parallel=False)
-def generate_order_inner(seed, page_to_samples_array, page_sizes,
-                         result, buffer_size=6):
+def generate_order_inner(
+    seed, page_to_samples_array, page_sizes, result, buffer_size=6
+):
     num_pages = len(page_sizes)
     random.seed(seed)
     np.random.seed(seed)
@@ -41,7 +42,7 @@ def generate_order_inner(seed, page_to_samples_array, page_sizes,
 
 class QuasiRandom(TraversalOrder):
 
-    def __init__(self, loader: 'Loader'):
+    def __init__(self, loader: "Loader"):
         super().__init__(loader)
 
         # TODO filter only the samples we care about!!
@@ -49,22 +50,20 @@ class QuasiRandom(TraversalOrder):
 
         if not self.page_to_samples:
             raise ValueError(
-                "Dataset won't benefit from QuasiRandom order, use regular Random")
+                "Dataset won't benefit from QuasiRandom order, use regular Random"
+            )
 
         if self.distributed:
-            raise NotImplementedError(
-                "distributed Not implemented yet for QuasiRandom")
+            raise NotImplementedError("distributed Not implemented yet for QuasiRandom")
 
         self.prepare_data_structures()
-
 
     def prepare_data_structures(self):
         index_set = set(self.indices)
         max_size = max(len(y) for y in self.page_to_samples.values())
         num_pages = max(k for k in self.page_to_samples.keys()) + np.uint64(1)
 
-        self.page_to_samples_array = np.empty((num_pages, max_size),
-                                              dtype=np.int64)
+        self.page_to_samples_array = np.empty((num_pages, max_size), dtype=np.int64)
         self.page_sizes = np.zeros(num_pages, dtype=np.int64)
 
         for page, content in self.page_to_samples.items():
@@ -73,14 +72,15 @@ class QuasiRandom(TraversalOrder):
                     self.page_to_samples_array[page][self.page_sizes[page]] = c
                     self.page_sizes[page] += 1
 
-
-
     def sample_order(self, epoch: int) -> Sequence[int]:
         seed = self.seed * 912300 + epoch
         result_order = np.zeros(len(self.indices), dtype=np.int64)
-        generate_order_inner(seed, self.page_to_samples_array,
-                             self.page_sizes,
-                             result_order,
-                             2*self.loader.batch_size)
+        generate_order_inner(
+            seed,
+            self.page_to_samples_array,
+            self.page_sizes,
+            result_order,
+            2 * self.loader.batch_size,
+        )
 
         return result_order

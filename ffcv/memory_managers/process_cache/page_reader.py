@@ -1,5 +1,5 @@
-from threading import Thread
 from queue import Queue
+from threading import Thread
 
 import numpy as np
 
@@ -8,8 +8,7 @@ from ...libffcv import read
 
 class PageReader(Thread):
 
-    def __init__(self, fname:str, queries: Queue, loaded: Queue,
-                 memory: np.ndarray):
+    def __init__(self, fname: str, queries: Queue, loaded: Queue, memory: np.ndarray):
         self.fname: str = fname
         self.queries: Queue = queries
         self.memory: np.ndarray = memory
@@ -19,7 +18,8 @@ class PageReader(Thread):
 
     def run(self):
         import hashlib
-        with open(self.fname, 'rb') as handle:
+
+        with open(self.fname, "rb") as handle:
             fileno = handle.fileno()
 
             while True:
@@ -33,4 +33,3 @@ class PageReader(Thread):
                 length = read(fileno, self.memory[slot], offset)
                 # print("L", page_number, slot, hashlib.md5(self.memory[slot]).hexdigest(), self.memory[slot].ctypes.data, length)
                 self.loaded.put(page_number)
-
