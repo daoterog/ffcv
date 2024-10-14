@@ -173,6 +173,13 @@ class EpochIterator(Thread):
                     for x, k in zip(outputs, self.loader.reader.handlers.keys())
                 }
 
+                if self.loader.reader._custom_field_mapper is not None:
+                    for k, v in self.loader.reader._custom_field_mapper.items():
+                        if isinstance(result[v], list):
+                            result[v].append(result.pop(k))
+                        else:
+                            result[v] = [result[v], result.pop(k)]
+
             if self.return_indices:
                 return batch_indices, result
             return result
